@@ -37,7 +37,6 @@ char *set_file_to_buf(char *file_name){
     char *file_buf;
     fp = fopen(file_name,"rb");
     file_size = get_file_size(file_name);
-
     file_buf = malloc(file_size);
         
     
@@ -54,8 +53,7 @@ char *set_file_to_buf(char *file_name){
     
 }
 //将file_buf的内容写到文件中
-void set_buf_to_file(char *dest_file_name,char *file_buf){
-    long file_size = get_file_size(default_file);
+void set_buf_to_file(char *dest_file_name,char *file_buf,long file_size){
     FILE *fp = fopen(dest_file_name,"w");
     fwrite(file_buf,1,file_size,fp);
 }
@@ -255,6 +253,7 @@ void modify(offset_address *base_address){
 int main(int argc,char *argv[]){
     char *file_buf = NULL;
     char *image_buf = NULL;
+    char *src_file = NULL;
     offset_address *file_offset = NULL;
     offset_address *image_offset = NULL;
     
@@ -265,11 +264,11 @@ int main(int argc,char *argv[]){
     
     //函数内分配文件file_buf空间，并将文件数据读入file_buf中
     if(argc >= 2){
-        file_buf = set_file_to_buf(argv[1]);
+        src_file = argv[1];
     }else{
-        file_buf = set_file_to_buf(default_file);
+        src_file = default_file;
     }
-    
+    file_buf = set_file_to_buf(src_file);    
     
     //获取文件的偏移地址
     get_offset_address(file_offset,file_buf,0);
@@ -293,7 +292,7 @@ int main(int argc,char *argv[]){
 
     //printf("rva :%08x\n",foa2rva(file_offset,0x00161aac));
     modify(file_offset);
-    set_buf_to_file("pojie.exe",file_buf);
+    set_buf_to_file("pojie.exe",file_buf,get_file_size(src_file));
 
     
 
