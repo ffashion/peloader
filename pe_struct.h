@@ -1,5 +1,17 @@
 #include <stdint.h>
+#include "data_dir.h"
 #define IMAGE_SIZEOF_SHORT_NAME 8
+#define MAX_SECTION 10
+typedef struct offset_address{
+    struct elf_dos *dos_offset;
+    struct elf_nt *nt_offset;
+    struct image_file_header *pe_offset ;
+    struct image_option_file_header *ope_offset;
+    struct image_section_header *section_table_offset[MAX_SECTION];
+    char *section_offset[MAX_SECTION];
+} offset_address;
+// //*表示一些比较重要的字段
+
 union misc_t{
     uint32_t virtual_address;
     uint32_t virtual_size;
@@ -8,7 +20,7 @@ union misc_t{
 struct image_data_dict
 {
     uint32_t virtual_address;
-    uint32_t size;
+    uint32_t size; //记录此目录大小, 可以随便修改，没啥用
 };
 
 //20字节
@@ -28,6 +40,7 @@ struct image_option_file_header
 {
     uint16_t magic;                         //*
     uint8_t  major_linker_version;
+    uint8_t  minor_linker_version;
     uint32_t size_of_code;                  //*
     uint32_t SizeOfInitializedData;         //*
     uint32_t SizeOfUninitializedData;       //*
@@ -108,3 +121,5 @@ struct  exeFile{
     struct elf_dos elf_dos;
     struct elf_nt elf_nt;
 };
+
+uint32_t rva2foa(offset_address *base_address,uint32_t rva);
