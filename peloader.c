@@ -9,6 +9,15 @@
 #define DOS_SIZE 64
 #define PE_SIZE  20
 char *default_file = "./test.exe";
+//根据给定的alignment和value 返回value偏移后的结果
+uint32_t get_alignment(uint32_t alignment,uint32_t value){
+    if(value %alignment ==0){
+        return value;
+    }else{
+        return alignment-(value % alignment) + value;
+    }
+    //return value%alignment ==0 ? value : alignment-(value % alignment) + value;
+}
 long get_file_size(char *file_name){
     FILE *fp = NULL;
     if((fp = fopen(file_name,"r")) == NULL){
@@ -63,11 +72,13 @@ int get_offset_address(offset_address *base_address,char *buf,int flag){
         base_address->nt_offset =  (struct  elf_nt*)((char*)base_address->dos_offset + base_address->dos_offset->e_lfanew);  
         base_address->pe_offset =  (struct  image_file_header*)((char *)base_address->nt_offset + sizeof(base_address->nt_offset->signature));
         base_address->ope_offset = (struct  image_option_file_header*)((char *)base_address->pe_offset + PE_SIZE);
-        for(int i=0;i<=base_address->pe_offset->number_of_section-1;i++){
+        //分配所有的节表指针(包括空闲的)
+        for(int i=0;i<=base_address->pe_offset->number_of_section-1+(get_section_table_spare_size(base_address)/40 -1);i++){
              base_address->section_table_offset[i] = (struct image_section_header*)((char *)base_address->ope_offset + base_address->pe_offset->size_of_optional_header+ i*sizeof(struct image_section_header));
              //printf("%d",base_address->section_table_offset[i]->pointer_to_raw_data);
              //base_address->section_offset[i]= (char *)base_address->dos_offset + base_address->section_table_offset[i]->pointer_to_raw_data;
         }
+
         return 0;
     }else if(flag == 1){
         //注意image刚开始进来是空的，所以不能和文件一样处理
@@ -92,6 +103,10 @@ int print_relocation_dict(offset_address *base_address){
     //用于记录已循环的块大小
     //uint32_t recorded_block_size = 0;
     //内部2字节的地址数据
+    if(base_address->ope_offset->data_dict[5].virtual_address ==0){
+        printf("此dll/exe 无重定位表\n");
+        return -1;
+    }
     uint16_t *data = 0;
     struct image_base_relocation_dict *relocation_dict = (struct image_base_relocation_dict*)((char *)base_address->dos_offset + rva2foa(base_address,base_address->ope_offset->data_dict[5].virtual_address));
     
@@ -135,7 +150,7 @@ int print_export_dict(offset_address *base_address){
     char *fun_name = NULL;
     //exe中存储的oridnals
     uint16_t oridnals;
-    //oridinals加上base的值
+    //real_oridnals 存储oridinals加上base的值
     uint16_t real_oridnals;
     uint32_t fun_addr = 0x0;
     for(uint32_t i=0;i<=export_dict->number_of_names-1;i++){
@@ -150,7 +165,7 @@ int print_export_dict(offset_address *base_address){
     }
     return 0;
 }
-int printData(offset_address *base_address){
+int print_data(offset_address *base_address){
     
     printf("------------DOS header ----------\n");
     printf("magic :%04x\n",base_address->dos_offset->e_magic); //先5a 再4d
@@ -185,9 +200,9 @@ int printData(offset_address *base_address){
         memcpy(name,&base_address->section_table_offset[i]->name,8);
         printf("section[%d] section name        :%s\n",i,name);
         printf("section[%d] pointer to raw data :%08x\n",i,base_address->section_table_offset[i]->pointer_to_raw_data);//节在文件中的偏移
-        printf("section[%d] virtual address     :%08x\n",i,base_address->section_table_offset[i]->virtual_address);
-        printf("section[%d] virtual size        :%08x\n",i,base_address->section_table_offset[i]->misc.virtual_size);
-        printf("section[%d] size of raw data    :%08x\n",i,base_address->section_table_offset[i]->size_of_raw_data);
+        printf("section[%d] virtual address     :%08x\n",i,base_address->section_table_offset[i]->virtual_address);//节在内存中的偏移
+        printf("section[%d] virtual size        :%08x\n",i,base_address->section_table_offset[i]->misc.virtual_size);//节的真实大小
+        printf("section[%d] size of raw data    :%08x\n",i,base_address->section_table_offset[i]->size_of_raw_data);//节在文件对齐后的大小
         //printf("section[%d] base address :%08x\n",i,dos_buf->e_lfanew+4+PE_SIZE+OPE_SIZE+SECTION_SIZE*i);
         printf("此节空余空间为: %d\n",base_address->section_table_offset[i]->size_of_raw_data - base_address->section_table_offset[i]->misc.virtual_size);
     }
@@ -196,27 +211,11 @@ int printData(offset_address *base_address){
     }
 
     print_export_dict(base_address);
-
     
-    print_relocation_dict(base_address);
-    //printf("导出表内存位置:%08x,导出表文件位置:%08x\n",base_address->ope_offset->data_dict[0].virtual_address,rva2foa(base_address, base_address->ope_offset->data_dict[0].virtual_address));
-    
-
-
-    
-    
-    
-
-
-
-
-
-    
-
-    int spare_section_table_bytes_number = base_address->ope_offset->size_of_headers - (base_address->dos_offset->e_lfanew + 4 + PE_SIZE + base_address->pe_offset->size_of_optional_header + base_address->pe_offset->number_of_section*40);
-    //定义x只是为了变量名短一点
-    int x = spare_section_table_bytes_number;
-    printf("有%d字节可供新增节表使用,最多可以添加%d个节 建议只添加%d个节\n",x,x/40,x/40 -1);
+    //打印重定位表,太多了
+    //print_relocation_dict(base_address);
+    int spare_size = get_section_table_spare_size(base_address);
+    printf("有%d字节可供新增节表使用,最多可以添加%d个节 建议只添加%d个节\n",spare_size,spare_size/40,spare_size/40 -1);
     return 0;
 }
 
@@ -302,50 +301,63 @@ uint32_t foa2rva(offset_address *base_address,uint32_t foa){
     }
     return rva;
 }
-
-uint16_t *each_section_spare_size(offset_address *base_address,uint16_t *spare_size){
+uint16_t get_section_table_spare_size(offset_address *base_address){
+    return  base_address->ope_offset->size_of_headers - (base_address->dos_offset->e_lfanew + 4 + PE_SIZE + base_address->pe_offset->size_of_optional_header + base_address->pe_offset->number_of_section*40);
+    
+}
+uint16_t *get_each_section_spare_size(offset_address *base_address,uint16_t *spare_size){
         for(int i=0;i<=base_address->pe_offset->number_of_section-1;i++){
             spare_size[i] = base_address->section_table_offset[i]->size_of_raw_data - base_address->section_table_offset[i]->misc.virtual_size;
         }
         return spare_size;
 }
 
-void modify(offset_address *base_address){
+void exploit(offset_address *base_address){
     //base_address->section_table_offset[0]->pointer_to_raw_data + base_address->section_table_offset[0]->misc.virtual_size //从这个字节开始为空
-    uint8_t shellcode[] = {0x6a,0x00,0x6a,0x01,0x6a,0x00,0x6a,0x00,0xe8,0x00,0x00,0x00,0x00,0xe9,0x00,0x00,0x00,0x00};//18字节
-    //-文件的偏移地址  空闲空间的  
+    uint8_t shellcode[] = {0x6a,0x00,0x6a,0x00,0x6a,0x00,0x6a,0x00,0xe8,0x00,0x00,0x00,0x00,0xe9,0x00,0x00,0x00,0x00};
+    //uint8_t shellcode[] = {0x6a,0x00,0x6a,0x00,0x00,0x00,0x00,0x6a,0x00,0x00,0x00,0x00,0x6a,0x00,0xe8,0x00,0x00,0x00,0x00,0xe9,0x00,0x00,0x00,0x00};//18字节
+    //空闲空间的偏移地址(foa中)
     uint32_t in_file_spare_address_offset = base_address->section_table_offset[0]->pointer_to_raw_data + base_address->section_table_offset[0]->misc.virtual_size;
-    // jmp_address = 调用函数的绝对地址 - 本指令地址的下一个字节
-    uint32_t jmp_address =  0x752a1930 - (foa2rva(base_address,in_file_spare_address_offset + 8 + 5) + base_address->ope_offset->image_base);
+    // jmp_address = 调用函数的绝对地址 - 本指令地址的下一个指令所在地址   10表示本指令的开始位置 5表示下一指令开始位置
+    uint32_t jmp_address =  0x76F71930 - (foa2rva(base_address,in_file_spare_address_offset + 8 + 5) + base_address->ope_offset->image_base);
+    //uint32_t jmp_address =  0x76F71930 - (foa2rva(base_address,in_file_spare_address_offset + 14 + 5) + base_address->ope_offset->image_base);
+    //call_address = 原本函数入口绝对地址 - 本指令的下一条地址所在绝对地址
     uint32_t call_address = (base_address->ope_offset->address_of_entry_point + base_address->ope_offset->image_base) -  (foa2rva(base_address,in_file_spare_address_offset + 8 + 5 +5) + base_address->ope_offset->image_base);
+    //uint32_t call_address = (base_address->ope_offset->address_of_entry_point + base_address->ope_offset->image_base) -  (foa2rva(base_address,in_file_spare_address_offset + 14 + 5 +5) + base_address->ope_offset->image_base);
+    //MZ所在的绝对地址 - 本指令所在下一条地址所在绝对地址
+    //uint32_t string_address_title = (base_address->ope_offset->image_base) - (foa2rva(base_address,in_file_spare_address_offset +2 +5) + base_address->ope_offset->image_base);
 
+    //修改entry point
     base_address->ope_offset->address_of_entry_point = foa2rva(base_address,in_file_spare_address_offset);
     //printf("OEP %04x\n",base_address->ope_offset->address_of_entry_point);
     memcpy(&shellcode[9],&jmp_address,4);
     memcpy(&shellcode[14],&call_address,4);
-
-    // for(int i =0;i<=17;i++){
-    //     printf("%02x ",shellcode[i]);
-    // }
-    memcpy((void *)((char *)base_address->dos_offset + in_file_spare_address_offset),&shellcode,18);
+    // memcpy(&shellcode[15],&jmp_address,4);
+    // //注意这里之前我写了21 会造成溢出,直接修改return 地址
+    // memcpy(&shellcode[20],&call_address,4);
+    
+    // memcpy(&shellcode[3],&string_address_title,4);
+    memcpy((void *)((char *)base_address->dos_offset + in_file_spare_address_offset),&shellcode,sizeof(shellcode));
     
 }
-void add_section(offset_address *file_base_address){
-    
-    file_base_address->pe_offset->number_of_section++;
-
+void add_section(offset_address *base_address,char *name){
+    //为了变量名短点 nos=number of section
+    int nos = base_address->pe_offset->number_of_section;
+    memcpy(&base_address->section_table_offset[nos]->name,name,8);
+    base_address->section_table_offset[nos]->misc.virtual_size = 0x1000;
+    base_address->section_table_offset[nos]->size_of_raw_data = 0x200;
+    //virtual_address= 上个节的  [virtual_address + max(virtual_size,size_of_raw_data)] 再按内存对齐
+    base_address->section_table_offset[nos]->virtual_address = get_alignment(0x1000,base_address->section_table_offset[nos-1]->virtual_address + \
+    (base_address->section_table_offset[nos-1]->misc.virtual_size > base_address->section_table_offset[nos-1]->size_of_raw_data ?base_address->section_table_offset[nos-1]->misc.virtual_size : base_address->section_table_offset[nos-1]->size_of_raw_data)
+    );
+    base_address->section_table_offset[nos]->pointer_to_raw_data = base_address->section_table_offset[nos-1]->pointer_to_raw_data +  base_address->section_table_offset[nos-1]->size_of_raw_data;
+    base_address->pe_offset->number_of_section++;
+    base_address->ope_offset->size_of_image+=0x1000;
 }
-//windows中内置的函数getProcAddress()可以获取dll中的函数地址，这里我们自己写一个
-// void get_fun_addr_by_name(offset_address *base_address,void * (*func)(void *)){
-
-// }
-// void get_fun_addr_by_ordinals(offset_address *base_address,uint16_t oridinals){
-
-
-// }
-
 
 int main(int argc,char *argv[]){
+    //记录file_buf此时多大
+    long file_buf_size=0;
     char *file_buf = NULL;
     char *image_buf = NULL;
     char *src_file = NULL;
@@ -363,31 +375,33 @@ int main(int argc,char *argv[]){
     }else{
         src_file = default_file;
     }
-    file_buf = set_file_to_buf(src_file);    
+
+    file_buf = set_file_to_buf(src_file);
+
+    //设置file_buf_size，用于增加节,后面根据这个大小重新分配空间(realloc)，以及根据此值指定存到文件大小
+    //file_buf_size =get_file_size(src_file) + 0x1000;
+    file_buf_size =get_file_size(src_file);
+    file_buf = realloc(file_buf,file_buf_size);
     
     //获取文件的偏移地址
     get_offset_address(file_offset,file_buf,0);
     
-    //分配image_buf空间
+    //分配image_buf空间,并置0
     image_buf = malloc(file_offset->ope_offset->size_of_image); memset(image_buf,0,file_offset->ope_offset->size_of_image);
     
     //将file buf数据拷入image buf中
-    file2image(file_offset,file_buf,image_buf);
-    
+    //file2image(file_offset,file_buf,image_buf);
     //获取镜像的偏移地址
     get_offset_address(image_offset,image_buf,1);
-    
-    
-     printData(file_offset);
-    //printData(image_offset);
-    
+    //add_section(file_offset,"test");
+    print_data(file_offset);
+    //print_data(image_offset);
     //此函数先对file_buf置空，然后再将image_buf按照file的格式拷贝到file_buf中
     //image2file(image_offset,file_buf,image_buf);
     
 
-    //printf("rva :%08x\n",foa2rva(file_offset,0x00161aac));
-    //modify(file_offset);
-    //set_buf_to_file("pojie.exe",file_buf,get_file_size(src_file));
+    exploit(file_offset);
+    set_buf_to_file("pojie.exe",file_buf,file_buf_size);
 
     
 

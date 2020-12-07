@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "data_dir.h"
 #define IMAGE_SIZEOF_SHORT_NAME 8
-#define MAX_SECTION 10
+#define MAX_SECTION 20
 typedef struct offset_address{
     struct elf_dos *dos_offset;
     struct elf_nt *nt_offset;
@@ -103,14 +103,14 @@ struct elf_dos
     uint32_t e_lfanew; //* 存储的值是相对于文件开始，根据此值可以找到NT头
 };
 
-//
+//40字节
 struct image_section_header{
     uint8_t name[IMAGE_SIZEOF_SHORT_NAME]; //*
-    union misc_t misc;              //*
-    uint32_t virtual_address;      //*
-    uint32_t size_of_raw_data;
-    uint32_t pointer_to_raw_data;
-    uint32_t pointer_to_relocations;
+    union misc_t misc;              //*节在没有文件对齐下内存中真实的大小
+    uint32_t virtual_address;       //*节在内存中偏移的地址
+    uint32_t size_of_raw_data;      //*节在文件对齐后的大小
+    uint32_t pointer_to_raw_data;   //*
+    uint32_t pointer_to_relocations;//指向重定位表
     uint32_t pointer_to_linenumbers;
     uint16_t number_of_relocations;
     uint16_t number_of_linenumbers;
@@ -123,3 +123,4 @@ struct  exeFile{
 };
 
 uint32_t rva2foa(offset_address *base_address,uint32_t rva);
+uint16_t get_section_table_spare_size(offset_address *base_address);
