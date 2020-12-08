@@ -2,6 +2,7 @@
 #include "data_dir.h"
 #define IMAGE_SIZEOF_SHORT_NAME 8
 #define MAX_SECTION 20
+//offset_address 第一层是自己本机的地址(64位)
 typedef struct offset_address{
     struct elf_dos *dos_offset;
     struct elf_nt *nt_offset;

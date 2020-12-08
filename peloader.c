@@ -99,6 +99,36 @@ int get_offset_address(offset_address *base_address,char *buf,int flag){
     }
     return 0;
 }
+void *get_offset_rva2foa(offset_address *base_address,uint32_t rva){
+    return (uint8_t *)base_address->dos_offset + rva2foa(base_address,rva);
+}
+
+int print_import_table(offset_address *base_address){
+    struct image_import_dict *import_dict= (struct image_import_dict *)get_offset_rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address);
+    char *name = NULL;
+    struct image_chunk_data* INT = NULL;
+    int i =0;//for circul
+    while(import_dict->name != 0){//最后的结构为全0结构,这里就只判断名字位置是否为0了，虽然这样写不准确，以后改
+        
+        import_dict = (struct image_import_dict *)get_offset_rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address +sizeof(struct image_import_dict)*i);
+        name = (char *)get_offset_rva2foa(base_address,import_dict->name);
+        INT = (struct image_chunk_data*)get_offset_rva2foa(base_address,import_dict->original_first_thunk.original_first_thunk);
+        printf("%s ",name);
+        printf("%x ",INT->chunk_data.address_of_data);
+
+        printf("\n");
+
+        //加一个结构体的大小 为了while循环的判断
+        import_dict = (struct image_import_dict *)get_offset_rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address +sizeof(struct image_import_dict)*(i+1));
+        i++;
+    }
+    // for(int i=0;i<=6;i++){
+    //     import_dict[i] = (struct image_import_dict *)((uint8_t *)base_address->dos_offset + rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address) +sizeof(struct image_import_dict)*i);
+    //     name = (char *)((uint8_t *)base_address->dos_offset + rva2foa(base_address,import_dict[i]->name));
+    //     printf("%s\n",name);
+    // }
+    return 0;
+}
 int print_relocation_dict(offset_address *base_address){
     //用于记录已循环的块大小
     //uint32_t recorded_block_size = 0;
@@ -209,13 +239,16 @@ int print_data(offset_address *base_address){
     for(uint32_t i=0;i<=base_address->ope_offset->number_of_rva_and_sizes-2;i++){
         printf("%s的地址为:0x%08x 大小为:%d字节\n",data_dir[i],base_address->ope_offset->data_dict[i].virtual_address,base_address->ope_offset->data_dict[i].size);
     }
+    int spare_size = get_section_table_spare_size(base_address);
+    printf("有%d字节可供新增节表使用,最多可以添加%d个节 建议只添加%d个节\n",spare_size,spare_size/40,spare_size/40 -1);
+    
 
     print_export_dict(base_address);
     
     //打印重定位表,太多了
     //print_relocation_dict(base_address);
-    int spare_size = get_section_table_spare_size(base_address);
-    printf("有%d字节可供新增节表使用,最多可以添加%d个节 建议只添加%d个节\n",spare_size,spare_size/40,spare_size/40 -1);
+    
+    print_import_table(base_address);
     return 0;
 }
 
