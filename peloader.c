@@ -122,6 +122,7 @@ int print_import_table(offset_address *base_address){
         import_dict = (struct image_import_dict *)get_offset_rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address +sizeof(struct image_import_dict)*(i+1));
         i++;
     }
+
     // for(int i=0;i<=6;i++){
     //     import_dict[i] = (struct image_import_dict *)((uint8_t *)base_address->dos_offset + rva2foa(base_address,base_address->ope_offset->data_dict[1].virtual_address) +sizeof(struct image_import_dict)*i);
     //     name = (char *)((uint8_t *)base_address->dos_offset + rva2foa(base_address,import_dict[i]->name));
@@ -195,8 +196,12 @@ int print_export_dict(offset_address *base_address){
     }
     return 0;
 }
-int print_data(offset_address *base_address){
-    
+int print_data(offset_address *base_address){\
+
+    if(base_address->ope_offset->magic != 0x010b){
+        printf("此程序不是32位程序，暂时不支持\n");
+        exit(-1);
+    }
     printf("------------DOS header ----------\n");
     printf("magic :%04x\n",base_address->dos_offset->e_magic); //先5a 再4d
     printf("cblp  :%04x\n",base_address->dos_offset->e_cblp);
@@ -427,14 +432,15 @@ int main(int argc,char *argv[]){
     //获取镜像的偏移地址
     get_offset_address(image_offset,image_buf,1);
     //add_section(file_offset,"test");
+    
     print_data(file_offset);
     //print_data(image_offset);
     //此函数先对file_buf置空，然后再将image_buf按照file的格式拷贝到file_buf中
     //image2file(image_offset,file_buf,image_buf);
     
 
-    exploit(file_offset);
-    set_buf_to_file("pojie.exe",file_buf,file_buf_size);
+    //exploit(file_offset);
+    //set_buf_to_file("pojie.exe",file_buf,file_buf_size);
 
     
 
