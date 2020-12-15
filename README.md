@@ -1,3 +1,4 @@
+![C/C++ CI](https://github.com/ffashion/peloader/workflows/C/C++%20CI/badge.svg)
 # 编译
 
 1. make 
